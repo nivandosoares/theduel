@@ -6,13 +6,16 @@ Este diretório foi gerado a partir do ROM `Duel, The - Test Drive II (USA).sfc`
 - `code/banks/*.bin`: ROM separado por bancos (LoROM), gerado localmente (não versionado).
 - `code/rom_layout.asm`: layout ASM com `incbin` de cada banco.
 - `code/vectors.txt`: vetores nativo/emulação do SNES.
+- `code/disasm/bank00_reset.asm`: disassembly linear inicial a partir do vetor reset.
+- `code/disasm/entrypoints.txt`: vetores e alvos iniciais para rotulagem no disassembler.
 - `assets/header.json`: metadados do cabeçalho.
 - `assets/strings_ascii.txt`: strings ASCII localizadas no ROM.
 
 ## Próximos passos recomendados
 1. Carregar os bancos em um disassembler 65c816 (Ghidra + plugin SNES, IDA, ou Mesen-S debugger).
 2. Usar `vectors.txt` para iniciar no vetor `reset`.
-3. Renomear rotinas e substituir gradualmente `incbin` por código ASM comentado.
+3. Importar `code/disasm/entrypoints.txt` para criar labels iniciais no disassembler.
+4. Renomear rotinas e substituir gradualmente `incbin` por código ASM comentado.
 
 ## Nota sobre PR
 Para manter compatibilidade com criação de PR, os binários `bank_*.bin` não são commitados.

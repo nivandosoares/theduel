@@ -12,6 +12,98 @@ from pathlib import Path
 ASCII_RE = re.compile(rb"[\x20-\x7E]{4,}")
 
 
+ADDR_MODE_SIZE = {
+    "impl": 1,
+    "imm8": 2,
+    "imm_m": 0,
+    "imm_x": 0,
+    "imm16": 3,
+    "dp": 2,
+    "dp_x": 2,
+    "dp_y": 2,
+    "sr": 2,
+    "sr_y": 2,
+    "abs": 3,
+    "abs_x": 3,
+    "abs_y": 3,
+    "ind": 3,
+    "ind_x": 2,
+    "ind_y": 2,
+    "dp_ind": 2,
+    "dp_ind_long": 2,
+    "dp_ind_long_y": 2,
+    "long": 4,
+    "long_x": 4,
+    "rel8": 2,
+    "rel16": 3,
+    "block": 3,
+}
+
+
+# Decodificador mínimo (fallback em .byte para opcodes não mapeados).
+OPCODES = {
+    0x78: ("sei", "impl"),
+    0x18: ("clc", "impl"),
+    0x38: ("sec", "impl"),
+    0xFB: ("xce", "impl"),
+    0xC2: ("rep", "imm8"),
+    0xE2: ("sep", "imm8"),
+    0xA9: ("lda", "imm_m"),
+    0xA2: ("ldx", "imm_x"),
+    0xA0: ("ldy", "imm_x"),
+    0x8D: ("sta", "abs"),
+    0x8F: ("sta", "long"),
+    0x9C: ("stz", "abs"),
+    0x64: ("stz", "dp"),
+    0x20: ("jsr", "abs"),
+    0x22: ("jsl", "long"),
+    0x4C: ("jmp", "abs"),
+    0x5C: ("jml", "long"),
+    0x6C: ("jmp", "ind"),
+    0x60: ("rts", "impl"),
+    0x6B: ("rtl", "impl"),
+    0x40: ("rti", "impl"),
+    0xD0: ("bne", "rel8"),
+    0xF0: ("beq", "rel8"),
+    0x10: ("bpl", "rel8"),
+    0x30: ("bmi", "rel8"),
+    0x80: ("bra", "rel8"),
+    0x82: ("brl", "rel16"),
+    0x90: ("bcc", "rel8"),
+    0xB0: ("bcs", "rel8"),
+    0x50: ("bvc", "rel8"),
+    0x70: ("bvs", "rel8"),
+    0xC9: ("cmp", "imm_m"),
+    0xE0: ("cpx", "imm_x"),
+    0xC0: ("cpy", "imm_x"),
+    0x8A: ("txa", "impl"),
+    0x98: ("tya", "impl"),
+    0x9A: ("txs", "impl"),
+    0xBA: ("tsx", "impl"),
+    0x48: ("pha", "impl"),
+    0x68: ("pla", "impl"),
+    0xDA: ("phx", "impl"),
+    0xFA: ("plx", "impl"),
+    0x5A: ("phy", "impl"),
+    0x7A: ("ply", "impl"),
+    0x8B: ("phb", "impl"),
+    0xAB: ("plb", "impl"),
+    0x4B: ("phk", "impl"),
+    0x08: ("php", "impl"),
+    0x28: ("plp", "impl"),
+    0xEA: ("nop", "impl"),
+    0x2B: ("pld", "impl"),
+    0x74: ("stz", "dp_x"),
+    0xE8: ("inx", "impl"),
+    0xC8: ("iny", "impl"),
+    0xB9: ("lda", "abs_y"),
+    0xAA: ("tax", "impl"),
+    0xA8: ("tay", "impl"),
+    0x15: ("ora", "dp_x"),
+    0xB8: ("clv", "impl"),
+}
+
+
 @dataclass
 class HeaderInfo:
     mapping: str
@@ -133,6 +225,123 @@ def extract_ascii_strings(data: bytes) -> list[str]:
     return out
 
 
+def lorom_file_offset(addr16: int, bank: int = 0x00) -> int:
+    return bank * 0x8000 + (addr16 & 0x7FFF)
+
+
+def format_operand(mode: str, operand: bytes, pc: int) -> str:
+    if mode == "impl":
+        return ""
+    if mode in {"imm8", "dp", "dp_x", "dp_y", "sr", "sr_y", "ind_x", "ind_y", "dp_ind", "dp_ind_long", "dp_ind_long_y"}:
+        if mode == "imm8":
+            return f"#$%02X" % operand[0]
+        if mode == "dp_x":
+            return f"$%02X,X" % operand[0]
+        if mode == "dp_y":
+            return f"$%02X,Y" % operand[0]
+        if mode == "ind_x":
+            return f"($%02X,X)" % operand[0]
+        if mode == "ind_y":
+            return f"($%02X),Y" % operand[0]
+        return f"$%02X" % operand[0]
+    if mode in {"imm_m", "imm_x"}:
+        return f"#$%02X" % operand[0] if len(operand) == 1 else f"#$%04X" % int.from_bytes(operand, "little")
+    if mode in {"abs", "abs_x", "abs_y", "ind"}:
+        v = int.from_bytes(operand, "little")
+        if mode == "abs_x":
+            return f"$%04X,X" % v
+        if mode == "abs_y":
+            return f"$%04X,Y" % v
+        if mode == "ind":
+            return f"($%04X)" % v
+        return f"$%04X" % v
+    if mode in {"long", "long_x"}:
+        v = int.from_bytes(operand, "little")
+        return f"$%06X" % v
+    if mode == "rel8":
+        rel = int.from_bytes(operand, "little", signed=True)
+        return f"$%04X" % ((pc + 2 + rel) & 0xFFFF)
+    if mode == "rel16":
+        rel = int.from_bytes(operand, "little", signed=True)
+        return f"$%04X" % ((pc + 3 + rel) & 0xFFFF)
+    if mode in {"block", "imm16"}:
+        v = int.from_bytes(operand, "little")
+        return f"#$%04X" % v if mode == "imm16" else f"$%04X" % v
+    return " ".join(f"${b:02X}" for b in operand)
+
+
+def decode_reset_stub(data: bytes, reset_addr: int, max_bytes: int = 0x180) -> tuple[list[str], list[str]]:
+    start = lorom_file_offset(reset_addr)
+    end = min(start + max_bytes, len(data))
+    lines = [
+        '; Disassembly linear inicial a partir do vetor RESET (auto-gerado).',
+        '; Instruções não reconhecidas aparecem como .byte para revisão manual.',
+        f'; RESET = ${reset_addr:04X} (offset ROM 0x{start:06X})',
+        '',
+        f'.org ${reset_addr:04X}',
+        'reset_entry:',
+    ]
+
+    i = start
+    call_targets: list[str] = []
+    branch_targets: list[str] = []
+    # Estado inicial em modo emulação: M=1 e X=1 (acumulador/índice de 8 bits).
+    m8 = True
+    x8 = True
+    while i < end:
+        pc = reset_addr + (i - start)
+        op = data[i]
+        if op in OPCODES:
+            mnem, mode = OPCODES[op]
+            if mode == "imm_m":
+                size = 2 if m8 else 3
+            elif mode == "imm_x":
+                size = 2 if x8 else 3
+            else:
+                size = ADDR_MODE_SIZE[mode]
+            chunk = data[i : i + size]
+            if len(chunk) < size:
+                lines.append(f'  .byte ${op:02X} ; truncado')
+                break
+            operand = chunk[1:]
+            operand_txt = format_operand(mode, operand, pc)
+            byte_txt = ' '.join(f'{b:02X}' for b in chunk)
+            lines.append(f'  {mnem:<4} {operand_txt:<10} ; {byte_txt}')
+            i += size
+
+            if mnem == "jsr" and mode == "abs":
+                target = int.from_bytes(operand, "little")
+                call_targets.append(f"JSR ${target:04X} (bank 00)")
+            elif mnem == "jsl" and mode == "long":
+                target = int.from_bytes(operand, "little")
+                call_targets.append(f"JSL ${target:06X}")
+            elif mnem in {"jmp", "jml"} and operand:
+                target = int.from_bytes(operand, "little")
+                width = 4 if mnem == "jmp" else 6
+                call_targets.append(f"{mnem.upper()} ${target:0{width}X}")
+            elif mode in {"rel8", "rel16"}:
+                branch_targets.append(f"{mnem.upper()} {format_operand(mode, operand, pc)}")
+
+            if mnem == "rep" and operand:
+                m8 = m8 and not bool(operand[0] & 0x20)
+                x8 = x8 and not bool(operand[0] & 0x10)
+            elif mnem == "sep" and operand:
+                if operand[0] & 0x20:
+                    m8 = True
+                if operand[0] & 0x10:
+                    x8 = True
+            if mnem in {"rts", "rtl", "rti"}:
+                lines.append('')
+                lines.append('; fim do bloco linear inicial')
+                break
+        else:
+            lines.append(f'  .byte ${op:02X}       ; opcode não mapeado')
+            i += 1
+
+    refs = ["[calls]"] + sorted(set(call_targets)) + ["", "[branches]"] + sorted(set(branch_targets))
+    return lines, refs
+
+
 def write_project(rom_path: Path, out_dir: Path) -> None:
     data = rom_path.read_bytes()
     header = parse_header(data)
@@ -188,6 +397,37 @@ def write_project(rom_path: Path, out_dir: Path) -> None:
 
     (code_dir / "vectors.txt").write_text("\n".join(vectors_lines), encoding="utf-8")
 
+    disasm_dir = code_dir / "disasm"
+    disasm_dir.mkdir(parents=True, exist_ok=True)
+    reset_stub, reset_refs = decode_reset_stub(data, header.emulation_vectors["reset"])
+    (disasm_dir / "bank00_reset.asm").write_text("\n".join(reset_stub) + "\n", encoding="utf-8")
+
+    entrypoints = [
+        "# Pontos de entrada e referências iniciais",
+        "",
+        "[vectors]",
+        f"RESET = ${header.emulation_vectors['reset']:04X}",
+        f"NMI = ${header.emulation_vectors['nmi']:04X}",
+        f"IRQ = ${header.emulation_vectors['irq']:04X}",
+        "",
+    ] + reset_refs + ["", "Use estes endereços para criar labels iniciais no Ghidra/IDA."]
+    (disasm_dir / "entrypoints.txt").write_text("\n".join(entrypoints) + "\n", encoding="utf-8")
+
+    disasm_readme = """# Disassembly inicial
+
+Arquivos desta pasta servem como ponto de partida para substituir `incbin` por ASM comentado.
+
+- `bank00_reset.asm`: varredura linear a partir do vetor `reset`.
+- `entrypoints.txt`: vetores + alvos de `jsr/jsl/jmp/branches` detectados no bloco inicial.
+
+Fluxo recomendado:
+1. Importar ROM no Ghidra/IDA e criar labels de `entrypoints.txt`.
+2. Usar `vectors.txt` para validar ponto de entrada e interrupções.
+3. Expandir o disassembly por blocos a partir de `jsr/jsl/jmp` encontrados.
+4. Reclassificar dados/tabelas e substituir gradualmente bytes por instruções reais.
+"""
+    (disasm_dir / "README.md").write_text(disasm_readme, encoding="utf-8")
+
     readme = f"""# Estrutura reconstruída para engenharia reversa
 
 Este diretório foi gerado a partir do ROM `{rom_path.name}` para disponibilizar uma base de trabalho legível.
@@ -196,13 +436,16 @@ Este diretório foi gerado a partir do ROM `{rom_path.name}` para disponibilizar
 - `code/banks/*.bin`: ROM separado por bancos ({header.mapping}), gerado localmente (não versionado).
 - `code/rom_layout.asm`: layout ASM com `incbin` de cada banco.
 - `code/vectors.txt`: vetores nativo/emulação do SNES.
+- `code/disasm/bank00_reset.asm`: disassembly linear inicial a partir do vetor reset.
+- `code/disasm/entrypoints.txt`: vetores e alvos iniciais para rotulagem no disassembler.
 - `assets/header.json`: metadados do cabeçalho.
 - `assets/strings_ascii.txt`: strings ASCII localizadas no ROM.
 
 ## Próximos passos recomendados
 1. Carregar os bancos em um disassembler 65c816 (Ghidra + plugin SNES, IDA, ou Mesen-S debugger).
 2. Usar `vectors.txt` para iniciar no vetor `reset`.
-3. Renomear rotinas e substituir gradualmente `incbin` por código ASM comentado.
+3. Importar `code/disasm/entrypoints.txt` para criar labels iniciais no disassembler.
+4. Renomear rotinas e substituir gradualmente `incbin` por código ASM comentado.
 
 ## Nota sobre PR
 Para manter compatibilidade com criação de PR, os binários `bank_*.bin` não são commitados.

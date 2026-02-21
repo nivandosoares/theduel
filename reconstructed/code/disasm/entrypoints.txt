@@ -1,0 +1,33 @@
+# Pontos de entrada e referências iniciais
+
+[vectors]
+RESET = $802A
+NMI = $8139
+IRQ = $8322
+
+[calls]
+JML $018B26
+JSL $00845B
+JSL $00850F
+JSL $009283
+JSL $00954E
+JSL $00A368
+JSL $018AF8
+
+[branches]
+BEQ $814A
+BNE $8055
+BNE $805D
+BNE $806D
+BNE $8078
+BNE $8086
+BNE $80B6
+BPL $80D0
+BPL $80D8
+BPL $80ED
+BPL $8116
+BPL $8185
+BRA $8079
+BRA $8086
+
+Use estes endereços para criar labels iniciais no Ghidra/IDA.
