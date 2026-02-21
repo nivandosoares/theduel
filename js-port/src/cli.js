@@ -1,10 +1,25 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { loadRom, parseSnesHeader } from './rom.js';
 import { disassembleResetWindow } from './disasm.js';
 import { TheDuelBoot } from './gameBase.js';
 
-const romPath = process.argv[2];
-if (!romPath) {
+const inputPath = process.argv[2];
+const defaultCandidates = [
+  resolve(process.cwd(), 'Duel, The - Test Drive II (USA).sfc'),
+  resolve(process.cwd(), '../Duel, The - Test Drive II (USA).sfc')
+];
+
+let romPath;
+if (inputPath) {
+  romPath = resolve(process.cwd(), inputPath);
+} else {
+  romPath = defaultCandidates.find((p) => existsSync(p));
+}
+
+if (!romPath || !existsSync(romPath)) {
   console.error('Uso: node src/cli.js "Duel, The - Test Drive II (USA).sfc"');
+  console.error('Dica: de dentro de js-port, rode `npm run analyze` ou passe o caminho do ROM.');
   process.exit(1);
 }
 
@@ -17,6 +32,7 @@ const boot = new TheDuelBoot();
 boot.bootSequence();
 
 console.log('=== The Duel SNES -> JS base ===');
+console.log(`ROM: ${romPath}`);
 console.log(`Título: ${header.title}`);
 console.log(`Mapeamento: ${header.mapping}`);
 console.log(`RESET: $${reset.toString(16).toUpperCase()}`);
