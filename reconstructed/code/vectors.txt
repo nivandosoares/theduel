@@ -1,0 +1,18 @@
+; Vetores extraídos do cabeçalho SNES
+; Header @ 0x007FC0
+
+[native]
+cop = $FFFF
+brk = $FFFF
+abort = $FFFF
+nmi = $8139
+reset = $802A
+irq = $8322
+
+[emulation]
+cop = $FFFF
+brk = $FFFF
+abort = $FFFF
+nmi = $8139
+reset = $802A
+irq = $8322

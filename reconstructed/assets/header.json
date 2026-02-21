@@ -1,0 +1,30 @@
+{
+  "mapping": "LoROM",
+  "header_offset": 32704,
+  "title": "THE DUEL: TEST DRIVE",
+  "map_mode": 50,
+  "rom_type": 0,
+  "rom_size_byte": 10,
+  "sram_size_byte": 0,
+  "region": 1,
+  "developer_id": 121,
+  "version": 0,
+  "checksum_complement": 45106,
+  "checksum": 20429,
+  "native_vectors": {
+    "cop": 65535,
+    "brk": 65535,
+    "abort": 65535,
+    "nmi": 33081,
+    "reset": 32810,
+    "irq": 33570
+  },
+  "emulation_vectors": {
+    "cop": 65535,
+    "brk": 65535,
+    "abort": 65535,
+    "nmi": 33081,
+    "reset": 32810,
+    "irq": 33570
+  }
+}
