@@ -1,0 +1,10 @@
+{
+  "name": "theduel-js-port",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "analyze": "node src/cli.js \"../Duel, The - Test Drive II (USA).sfc\"",
+    "analyze:file": "node src/cli.js"
+  }
+}
